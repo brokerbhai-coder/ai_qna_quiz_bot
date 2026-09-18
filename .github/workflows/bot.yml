@@ -1,1 +1,33 @@
+name: Study Quiz Bot
 
+on:
+  workflow_dispatch: {}   # "Run workflow" button se manually chalane ke liye
+  schedule:
+    - cron: '30 6 * * *'  # 06:30 UTC = 12:00 PM IST (roz automatic)
+
+concurrency:
+  group: telegram-bot
+  cancel-in-progress: true   # purani run cancel karke sirf ek instance chalu rakhega
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 355   # ~5 ghante 55 minute (GitHub ka hard limit 6 ghante hai)
+
+    steps:
+      - name: Repo checkout karo
+        uses: actions/checkout@v4
+
+      - name: Python setup karo
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Dependencies install karo
+        run: pip install -r requirements.txt
+
+      - name: Bot chalao
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+        run: python bot.py
+        
