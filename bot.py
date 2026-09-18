@@ -290,4 +290,3 @@ if __name__ == "__main__":
     threading.Thread(target=start_ping_server, daemon=True).start()
     print("Bot chal raha hai... (band karne ke liye Ctrl+C dabayein)")
     bot.infinity_polling(skip_pending=True)
-  
