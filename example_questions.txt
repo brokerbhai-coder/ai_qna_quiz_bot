@@ -1,1 +1,27 @@
+TITLE: General Knowledge Sample Quiz
 
+Q: Bharat ki rajdhani kya hai?
+A) Mumbai
+B) Delhi
+C) Kolkata
+D) Chennai
+ANSWER: B
+EXPLANATION: Delhi bharat ki rajdhani hai.
+TIMER: 20
+
+Q: Surya ek kya hai?
+A) Grah
+B) Upgrah
+C) Tara
+D) Dhoomketu
+ANSWER: C
+TIMER: 20
+
+Q: Taj Mahal kis shahar me hai?
+A) Jaipur
+B) Delhi
+C) Agra
+D) Lucknow
+ANSWER: C
+EXPLANATION: Taj Mahal Agra, Uttar Pradesh me sthit hai.
+TIMER: 20
