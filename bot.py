@@ -180,7 +180,9 @@ def start_quiz_session(chat_id, quiz_id):
         "gen": 0,
         "stopped": False,
         "current_poll_id": None,
+        "current_correct_id": None,
         "default_timer": default_timer,
+        "scores": {},  # user_id -> {"name":, "correct":, "wrong":}
     }
 
     intro = (
@@ -202,7 +204,7 @@ def send_next_question(chat_id):
     quizzes = session["quizzes"]
 
     if idx >= len(quizzes):
-        bot.send_message(chat_id, "Quiz khatam! 🎉")
+        send_final_scores(chat_id, session, len(quizzes))
         ACTIVE.pop(chat_id, None)
         return
 
@@ -230,6 +232,7 @@ def send_next_question(chat_id):
     poll_id = sent.poll.id
     POLL_TO_CHAT[poll_id] = chat_id
     session["current_poll_id"] = poll_id
+    session["current_correct_id"] = q["correct_option_id"]
     session["gen"] += 1
     my_gen = session["gen"]
 
@@ -241,6 +244,20 @@ def send_next_question(chat_id):
             send_next_question(chat_id)
 
     threading.Thread(target=advance_after_timeout, daemon=True).start()
+
+
+def send_final_scores(chat_id, session, total_questions):
+    scores = session.get("scores", {})
+    if not scores:
+        bot.send_message(chat_id, "Quiz khatam! 🎉 (kisi ne bhi jawab nahi diya)")
+        return
+
+    ranked = sorted(scores.values(), key=lambda e: e["correct"], reverse=True)
+    lines = ["🏆 Result:"]
+    for e in ranked:
+        lines.append(f"{e['name']}: {e['correct']} sahi / {e['wrong']} galat (total {total_questions})")
+
+    bot.send_message(chat_id, "Quiz khatam! 🎉\n\n" + "\n".join(lines))
 
 
 @bot.poll_answer_handler()
@@ -255,6 +272,20 @@ def handle_poll_answer(poll_answer):
         return
     if session.get("current_poll_id") != poll_id:
         return  # yeh purana/expired poll hai, ignore karo
+
+    # Score record karte hain (option_ids khali hoga agar user ne vote hata diya)
+    if poll_answer.option_ids:
+        selected = poll_answer.option_ids[0]
+        user = poll_answer.user
+        name = user.first_name or "User"
+        if user.last_name:
+            name += f" {user.last_name}"
+        scores = session.setdefault("scores", {})
+        entry = scores.setdefault(user.id, {"name": name, "correct": 0, "wrong": 0})
+        if selected == session.get("current_correct_id"):
+            entry["correct"] += 1
+        else:
+            entry["wrong"] += 1
 
     my_gen = session["gen"]
 
