@@ -246,6 +246,12 @@ def send_next_question(chat_id):
     threading.Thread(target=advance_after_timeout, daemon=True).start()
 
 
+def _progress_bar(percent, length=10):
+    filled = round((percent / 100) * length)
+    filled = max(0, min(length, filled))
+    return "🟩" * filled + "⬜" * (length - filled)
+
+
 def send_final_scores(chat_id, session, total_questions):
     scores = session.get("scores", {})
     if not scores:
@@ -253,11 +259,23 @@ def send_final_scores(chat_id, session, total_questions):
         return
 
     ranked = sorted(scores.values(), key=lambda e: e["correct"], reverse=True)
-    lines = ["🏆 Result:"]
-    for e in ranked:
-        lines.append(f"{e['name']}: {e['correct']} sahi / {e['wrong']} galat (total {total_questions})")
+    lines = ["🏆 Result:\n"]
 
-    bot.send_message(chat_id, "Quiz khatam! 🎉\n\n" + "\n".join(lines))
+    medals = ["🥇", "🥈", "🥉"]
+    for i, e in enumerate(ranked):
+        answered = e["correct"] + e["wrong"]
+        correct_pct = round((e["correct"] / total_questions) * 100) if total_questions else 0
+        wrong_pct = round((e["wrong"] / total_questions) * 100) if total_questions else 0
+        medal = medals[i] if i < len(medals) else "▫️"
+
+        lines.append(f"{medal} {e['name']}")
+        lines.append(f"✅ Sahi: {e['correct']}/{total_questions} ({correct_pct}%)")
+        lines.append(_progress_bar(correct_pct))
+        lines.append(f"❌ Galat: {e['wrong']}/{total_questions} ({wrong_pct}%)")
+        lines.append(_progress_bar(wrong_pct))
+        lines.append("")  # khali line, agle user se pehle
+
+    bot.send_message(chat_id, "Quiz khatam! 🎉\n\n" + "\n".join(lines).strip())
 
 
 @bot.poll_answer_handler()
