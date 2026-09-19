@@ -47,8 +47,10 @@ def load_quiz_store():
     wajah se crash nahi hoga."""
     drive_data = gdrive_store.load_from_drive()
     if drive_data is not None:
-        print("[quiz_store] Google Drive se data load ho gaya.")
+        print(f"[quiz_store] Google Drive se data load ho gaya ({len(drive_data)} quiz).")
         return drive_data
+    else:
+        print("[quiz_store] Drive se data nahi mila, local file try kar rahe hain.")
 
     try:
         if os.path.exists(QUIZ_STORE_FILE):
@@ -71,7 +73,8 @@ def save_quiz_store():
     except Exception as e:
         print(f"quiz_store.json save karne me dikkat (ignore karke aage badh rahe hain): {e}")
 
-    gdrive_store.save_to_drive(QUIZ_STORE)
+    gdrive_saved = gdrive_store.save_to_drive(QUIZ_STORE)
+    print(f"[quiz_store] Drive pe save {'successful' if gdrive_saved else 'nahi ho paya'}.")
 
 
 QUIZ_STORE = load_quiz_store()
