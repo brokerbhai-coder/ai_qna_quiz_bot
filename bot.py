@@ -5,7 +5,7 @@ import json
 import threading
 import telebot
 from telebot import types
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from flask import Flask, request
 from quiz_parser import parse_quizzes, extract_title
 import gdrive_store
 
@@ -400,25 +400,66 @@ def handle_poll_answer(poll_answer):
     threading.Thread(target=advance_soon, daemon=True).start()
 
 
-class _PingHandler(BaseHTTPRequestHandler):
+app = Flask(__name__)
+
+# Webhook path me BOT_TOKEN daala hai taaki koi bahar wala isko guess na kar
+# sake aur galat updates na bhej sake.
+WEBHOOK_PATH = f"/webhook/{BOT_TOKEN}"
+
+
+@app.route(WEBHOOK_PATH, methods=["POST"])
+def receive_webhook():
+    """Telegram yahan naye updates POST karta hai (webhook mode)."""
+    try:
+        json_str = request.get_data().decode("utf-8")
+        update = telebot.types.Update.de_json(json_str)
+        bot.process_new_updates([update])
+    except Exception as e:
+        print(f"Webhook update process karne me error: {e}")
+    return "OK", 200
+
+
+@app.route("/", methods=["GET"])
+def health_check():
     """Render/UptimeRobot isi address ko ping karke bot ko jagaye rakhte hain."""
-
-    def do_GET(self):
-        self.send_response(200)
-        self.end_headers()
-        self.wfile.write(b"Bot is alive")
-
-    def log_message(self, format, *args):
-        pass  # HTTP logs chup rakhte hain, sirf bot ke logs dikhenge
+    return "Bot is alive", 200
 
 
-def start_ping_server():
-    port = int(os.environ.get("PORT", 8080))
-    server = HTTPServer(("0.0.0.0", port), _PingHandler)
-    server.serve_forever()
+def run_webhook_mode():
+    """Telegram ko batata hai ki updates ab webhook (HTTP) ke through
+    bhejein, polling ke through nahi — isse deploy ke dauraan purana aur
+    naya instance ek saath 'getUpdates' call karke conflict nahi karte."""
+    external_url = os.environ.get("RENDER_EXTERNAL_URL") or os.environ.get("WEBHOOK_URL")
+
+    try:
+        bot.remove_webhook()
+    except Exception as e:
+        print(f"remove_webhook me warning (ignore kar rahe hain): {e}")
+    time.sleep(1)
+
+    if external_url:
+        webhook_url = f"{external_url.rstrip('/')}{WEBHOOK_PATH}"
+        try:
+            bot.set_webhook(url=webhook_url)
+            print(f"Webhook set ho gaya: {webhook_url}")
+        except Exception as e:
+            print(f"Webhook set karne me error: {e}")
+
+        port = int(os.environ.get("PORT", 8080))
+        app.run(host="0.0.0.0", port=port, threaded=True)
+    else:
+        # Local testing ke liye (jab RENDER_EXTERNAL_URL available nahi
+        # hota) purane polling tarike par fallback karte hain.
+        print("RENDER_EXTERNAL_URL nahi mila, isliye local polling mode me chal raha hai...")
+
+        def run_local_ping_server():
+            port = int(os.environ.get("PORT", 8080))
+            app.run(host="0.0.0.0", port=port, threaded=True)
+
+        threading.Thread(target=run_local_ping_server, daemon=True).start()
+        bot.infinity_polling(skip_pending=True)
 
 
 if __name__ == "__main__":
-    threading.Thread(target=start_ping_server, daemon=True).start()
-    print("Bot chal raha hai... (band karne ke liye Ctrl+C dabayein)")
-    bot.infinity_polling(skip_pending=True)
+    print("Bot chal raha hai (webhook mode)...")
+    run_webhook_mode()
