@@ -7,6 +7,7 @@ import telebot
 from telebot import types
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from quiz_parser import parse_quizzes, extract_title
+import gdrive_store
 
 try:
     from dotenv import load_dotenv
@@ -39,9 +40,16 @@ QUIZ_STORE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "quiz
 
 
 def load_quiz_store():
-    """Bot start hote hi purane save kiye hue quizzes JSON file se load karta hai.
-    Agar file na ho ya kharab ho, to khali dict se shuru karta hai — bot kabhi
-    is wajah se crash nahi hoga."""
+    """Bot start hote hi purane save kiye hue quizzes load karta hai.
+    Pehle Google Drive try karta hai (agar configured hai, taaki naye
+    deploy ke baad bhi data mile); nahi to local JSON file se load karta
+    hai. Dono fail ho to khali dict se shuru karta hai — bot kabhi is
+    wajah se crash nahi hoga."""
+    drive_data = gdrive_store.load_from_drive()
+    if drive_data is not None:
+        print("[quiz_store] Google Drive se data load ho gaya.")
+        return drive_data
+
     try:
         if os.path.exists(QUIZ_STORE_FILE):
             with open(QUIZ_STORE_FILE, "r", encoding="utf-8") as f:
@@ -54,13 +62,16 @@ def load_quiz_store():
 
 
 def save_quiz_store():
-    """QUIZ_STORE ko JSON file me save karta hai. Fail ho jaye to bhi bot
+    """QUIZ_STORE ko local JSON file me aur (agar configured hai) Google
+    Drive pe bhi save karta hai. Kisi bhi step ke fail hone par bhi bot
     crash nahi hoga, sirf warning print hoga."""
     try:
         with open(QUIZ_STORE_FILE, "w", encoding="utf-8") as f:
             json.dump(QUIZ_STORE, f, ensure_ascii=False)
     except Exception as e:
         print(f"quiz_store.json save karne me dikkat (ignore karke aage badh rahe hain): {e}")
+
+    gdrive_store.save_to_drive(QUIZ_STORE)
 
 
 QUIZ_STORE = load_quiz_store()
