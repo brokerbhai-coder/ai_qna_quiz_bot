@@ -1,6 +1,7 @@
 import os
 import time
 import uuid
+import json
 import threading
 import telebot
 from telebot import types
@@ -28,9 +29,41 @@ bot = telebot.TeleBot(BOT_TOKEN)
 DEFAULT_TIMER_SECONDS = 30
 POST_ANSWER_PAUSE = 2  # jawab dene ke baad itna ruk kar agla question
 
-# Har banaye gaye quiz ko yahan yaad rakhte hain (jab tak bot chalu hai).
+# Har banaye gaye quiz ko yahan yaad rakhte hain.
 # quiz_id -> {"title": str, "quizzes": [list of quiz-dicts]}
-QUIZ_STORE = {}
+# Ye ab ek JSON file me bhi save hota hai taaki bot restart/spin-down ke
+# baad bhi purane quizzes wapas mil jayein. (Render free tier pe naya
+# deploy hone par filesystem reset ho jata hai, is liye sirf normal
+# restart/spin-down ke case me ye kaam karega, naye deploy me nahi.)
+QUIZ_STORE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "quiz_store.json")
+
+
+def load_quiz_store():
+    """Bot start hote hi purane save kiye hue quizzes JSON file se load karta hai.
+    Agar file na ho ya kharab ho, to khali dict se shuru karta hai — bot kabhi
+    is wajah se crash nahi hoga."""
+    try:
+        if os.path.exists(QUIZ_STORE_FILE):
+            with open(QUIZ_STORE_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                if isinstance(data, dict):
+                    return data
+    except Exception as e:
+        print(f"quiz_store.json load karne me dikkat (ignore karke aage badh rahe hain): {e}")
+    return {}
+
+
+def save_quiz_store():
+    """QUIZ_STORE ko JSON file me save karta hai. Fail ho jaye to bhi bot
+    crash nahi hoga, sirf warning print hoga."""
+    try:
+        with open(QUIZ_STORE_FILE, "w", encoding="utf-8") as f:
+            json.dump(QUIZ_STORE, f, ensure_ascii=False)
+    except Exception as e:
+        print(f"quiz_store.json save karne me dikkat (ignore karke aage badh rahe hain): {e}")
+
+
+QUIZ_STORE = load_quiz_store()
 
 # Chalu (live) quiz sessions. chat_id -> session-dict
 ACTIVE = {}
@@ -116,6 +149,7 @@ def handle_new_quiz_text(chat_id, raw_text):
 
     quiz_id = uuid.uuid4().hex[:8]
     QUIZ_STORE[quiz_id] = {"title": title or "Custom Quiz", "quizzes": quizzes}
+    save_quiz_store()
 
     markup = types.InlineKeyboardMarkup(row_width=1)
     markup.add(
@@ -254,6 +288,7 @@ def _progress_bar(percent, length=10):
 
 def send_final_scores(chat_id, session, total_questions):
     scores = session.get("scores", {})
+    quizzes = session.get("quizzes", [])
     if not scores:
         bot.send_message(chat_id, "Quiz khatam! 🎉 (kisi ne bhi jawab nahi diya)")
         return
@@ -277,6 +312,42 @@ def send_final_scores(chat_id, session, total_questions):
 
     bot.send_message(chat_id, "Quiz khatam! 🎉\n\n" + "\n".join(lines).strip())
 
+    # Jinhone galat jawab diye, unke liye ek "sirf galat wale sawaal se
+    # naya quiz banao" button bhejte hain. Har user ke liye alag quiz
+    # banta hai, taaki sirf unhi ke galat kiye hue questions shaamil hon.
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    has_retry_button = False
+
+    for user_id, e in scores.items():
+        wrong_indices = e.get("wrong_indices") or []
+        if not wrong_indices:
+            continue
+
+        wrong_quizzes = [quizzes[i] for i in wrong_indices if 0 <= i < len(quizzes)]
+        if not wrong_quizzes:
+            continue
+
+        retry_quiz_id = uuid.uuid4().hex[:8]
+        QUIZ_STORE[retry_quiz_id] = {
+            "title": f"{e['name']} ke galat sawaal",
+            "quizzes": wrong_quizzes,
+        }
+        has_retry_button = True
+        markup.add(
+            types.InlineKeyboardButton(
+                f"🔁 {e['name']} ke {len(wrong_quizzes)} galat sawaal se naya quiz",
+                callback_data=f"start:{retry_quiz_id}",
+            )
+        )
+
+    if has_retry_button:
+        save_quiz_store()
+        bot.send_message(
+            chat_id,
+            "Chaho to sirf galat kiye hue sawaalon se dobara quiz bana sakte ho 👇",
+            reply_markup=markup,
+        )
+
 
 @bot.poll_answer_handler()
 def handle_poll_answer(poll_answer):
@@ -299,11 +370,12 @@ def handle_poll_answer(poll_answer):
         if user.last_name:
             name += f" {user.last_name}"
         scores = session.setdefault("scores", {})
-        entry = scores.setdefault(user.id, {"name": name, "correct": 0, "wrong": 0})
+        entry = scores.setdefault(user.id, {"name": name, "correct": 0, "wrong": 0, "wrong_indices": []})
         if selected == session.get("current_correct_id"):
             entry["correct"] += 1
         else:
             entry["wrong"] += 1
+            entry["wrong_indices"].append(session["index"])
 
     my_gen = session["gen"]
 
