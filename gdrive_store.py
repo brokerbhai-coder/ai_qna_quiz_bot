@@ -41,6 +41,7 @@ def _get_service():
 
     if not creds_json or not folder_id:
         _drive_unavailable_reason = "GOOGLE_SERVICE_ACCOUNT_JSON ya GDRIVE_FOLDER_ID set nahi hai"
+        print(f"[gdrive_store] Drive configure nahi hai: {_drive_unavailable_reason}")
         return None
 
     try:
@@ -52,6 +53,7 @@ def _get_service():
             info, scopes=["https://www.googleapis.com/auth/drive"]
         )
         _drive_service = build("drive", "v3", credentials=creds, cache_discovery=False)
+        print("[gdrive_store] Drive service successfully ban gaya.")
         return _drive_service
     except Exception as e:
         _drive_unavailable_reason = f"Drive service banane me error: {e}"
